@@ -636,10 +636,14 @@ sum(accidents_test$severitat == 0 & pred < 0.15)/sum(accidents_test$severitat ==
 library(tree) # to build trees
 library(randomForest) # bagging and random forest
 library(gbm) #boosting
+set.seed(1917)
 
+#--------------------BAGGING
+# Bootsraping and generatin loads of different trees
+n_trees_boot = 5000
 baggedTrees <- randomForest(severitat ~ .,  
                            data = accidents_train,
-                           ntree = 1009,
+                           ntree = n_trees_boot,
                            nodesize = 5,
                            mtry = ncol(accidents_train)-1,
                            replace = TRUE,
@@ -648,16 +652,64 @@ baggedTrees <- randomForest(severitat ~ .,
                            ytest = accidents_test$severitat,
                            do.trace = 1)
 
-plot(x = 1:length(baggedTrees$test$err.rate[,'Test']), y = baggedTrees$test$err.rate[,'Test'], type = 'l', ylim = c( 0,0.5))
-lines(x=1:length(baggedTrees$test$err.rate[,'Test']), y = baggedTrees$err.rate[,'OOB'], col = 'red')
 # plot errors
 par(mfrow = c(1,1))
-plot(baggedTrees$test$mse, type = 'b', pch = 16, xlab = 'no trees', ylab = 'test MSE', 
-     main = 'Test set MSE')
+plot(x = 1:n_trees_boot, 
+    y = baggedTrees$test$err.rate[,'Test'], 
+    type = 'l', 
+    ylim = c( 0,0.3),
+    xlab = 'no trees', ylab = 'test MSE', main = 'Test set MSE')
+lines(x=1:n_trees_boot, y = baggedTrees$err.rate[,'OOB'], col = 'red')
+
+importance(baggedTrees) 
+varImpPlot(baggedTrees, pch=16)
+
+#--------------------RANDOM FORESTS
+# Bootsraping and generating 1000 different trees
+n_trees_rdn_frst = 5000
+rndForest <- randomForest(severitat ~ .,  
+                           data = accidents_train,
+                           ntree = n_trees_rdn_frst,
+                           nodesize = 5,
+                           mtry = round((dim(accidents_train)[2]-1)/3),
+                           replace = TRUE,
+                           keep.forest = TRUE,
+                           xtest = accidents_test[, cols],
+                           ytest = accidents_test$severitat,
+                           do.trace = 1)
+
+# plot errors
+par(mfrow = c(1,1))
+plot(x = 1:n_trees_rdn_frst, 
+    y = rndForest$test$err.rate[,'Test'], 
+    type = 'l', 
+    ylim = c( 0,0.3),
+    xlab = 'no trees', ylab = 'test MSE', main = 'Test set MSE')
+lines(x=1:n_trees_rdn_frst, y = rndForest$err.rate[,'OOB'], col = 'red')
+summary(rndForest)
+importance(rndForest) 
+varImpPlot(rndForest, pch=16)
+
+#-------------------- BOOSTING
+library(gbm) #boosting
+n_trees_boost = 10000
+boostedTree <- gbm(severitat ~ .,
+                  data = accidents_train,
+                  distribution = 'gaussian',
+                  shrinkage = 0.001,
+                  n.trees = n_trees_boost,
+                  interaction.depth = 2,
+                  cv.folds = 5)
+
+yHatBoost = predict(boostedTree, newdata = accidents_test, n.trees = n_trees_boost)
+mean((accidents_train$severitat-yHatBoost)^2)
 
 
-
-
+ggplot(data.frame(mse = boostedTree$cv.error, trees = 1:n_trees_boost),
+      aes(x = trees, y = mse))+
+  geom_line() + 
+  #scale_y_continuous(breaks=seq(0,100,20), limits = c(0,100)) +
+  labs(y = '5-fold cross-validation MSE')
 
 
 
